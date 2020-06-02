@@ -3,7 +3,9 @@ package release
 import (
 	"context"
 	"fmt"
+	"helm.sh/helm/v3/pkg/chart/loader"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/fluxcd/flux/pkg/git"
@@ -142,7 +144,16 @@ func (r *Release) prepareChart(client helm.Client, hr *v1.HelmRelease) (chart, f
 		}
 		chartPath = filepath.Join(export.Dir(), hr.Spec.GitChartSource.Path)
 		changed = func() bool {
-			i, _ := export.ChangedFiles(context.Background(), hr.Status.LastAttemptedRevision, []string{hr.Spec.GitChartSource.Path})
+			chart, _ := loader.Load(hr.Spec.GitChartSource.Path)
+			paths := []string{hr.Spec.GitChartSource.Path}
+
+			for _, dependency := range chart.Metadata.Dependencies {
+				if strings.HasPrefix(dependency.Repository, "file://") {
+					paths = append(paths, strings.Replace(dependency.Repository, "file:/", hr.Spec.GitChartSource.Path, 1))
+				}
+			}
+
+			i, _ := export.ChangedFiles(context.Background(), hr.Status.LastAttemptedRevision, paths)
 			return 0 < len(i)
 		}()
 		if r.config.UpdateDeps && !hr.Spec.GitChartSource.SkipDepUpdate {
